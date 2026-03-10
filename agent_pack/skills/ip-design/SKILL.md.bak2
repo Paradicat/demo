@@ -1,0 +1,408 @@
+---
+name: ip-design
+description: Guide for RTL/IP design — both new designs from scratch and existing-RTL workflows (reverse documentation, verification-only, doc-only). Covers spec-first workflow, user confirmation gates, project structure, RTL/filelist/testbench/testcase/SDC synchronization, and full test completion. Use when user asks to design new IP, write docs for existing RTL, add testbenches to existing code, or any combination of RTL design deliverables.
+---
+
+# IP Design Skill (RTL)
+
+Use this skill for any RTL/IP design task — from-scratch or existing-RTL. The workflow adapts based on what already exists and what deliverables are needed.
+
+## Core Principles
+
+1. **Plan-first**: Enter plan mode, enumerate steps, execute step-by-step.
+2. **Spec-first**: Write spec.md → Review → User confirms → Then RTL. No exceptions.
+3. **Synchronize downstream**: Any requirement/RTL change triggers updates to filelist, TB, testcases, SDC.
+4. **Pure RTL**: Synthesizable Verilog/SystemVerilog. No macros. Plain and portable.
+5. **Honest status**: Never mark a task complete when it is blocked or unverified. See `reference/status_template.md` for rules.
+6. **Language consistency**: All docs follow user's communication language.
+7. **Transparent consensus**: Never secretly change confirmed approach. See `reference/consensus_rules.md`.
+8. **Atomic doc updates**: Text + diagrams + structure = the specification. Update all together. See `reference/change_management.md`.
+
+## Task Dependency & Blocking Rules
+
+**NEW mode (full sequence):**
+
+```
+Step 0: Context + Mode
+  → Step 1: Project Structure
+    → Step 2: Write spec.md
+      → Step 3: Spec Review
+        → ⛔ GATE: User confirms spec
+          → Step 4: RTL + filelist
+            → Step 5: RTL Review
+              → Step 6: TB + smoke test  ←── MUST compile & pass
+                → Step 7: All testcases  ←── MUST all pass
+              → Step 8: SDC
+                → Step 9: Makefile
+```
+
+**RETRO-* / DOC2RTL modes**: Same dependency chain, but skipped steps are marked `[SKIP]` in status.md. Remaining steps follow the same blocking rules.
+
+- Incomplete upstream → all downstream incomplete.
+- Unconfirmed spec → no RTL.
+- Unreviewed RTL → no TB.
+- Failed or never-run compilation → Step 6 is NOT complete.
+- Any failed test → Step 7 is NOT complete.
+
+---
+
+## Workflow
+
+### Step 0: Context, Scope & Mode Selection
+
+**0a. Determine workflow mode from user's request.**
+
+The user decides the mode. Interpret their intent from the conversation:
+
+| User Says (examples) | Mode | Step Sequence |
+|----------------------|------|---------------|
+| "设计一个 XX IP" / "从零开始" / "design a new XX" | **NEW** | 0→1→2→3→GATE→4→5→6→7→8→9 |
+| "我有 RTL，帮我补全文档和验证" / "已有代码，补 TB 和 SDC" | **RETRO-FULL** | 0→1→2R→3→GATE→5→6→7→8→9 |
+| "我有 RTL，只写文档" / "帮我写 spec" | **RETRO-DOC** | 0→1→2R→3→GATE→END |
+| "我有 RTL，写文档和 TB" / "补文档和验证环境" | **RETRO-TB** | 0→1→2R→3→GATE→5→6→7→END |
+| "我有 spec，帮我写 RTL" / "根据文档实现" | **DOC2RTL** | 0→1→3V→GATE→4→5→(6→7→8→9) |
+
+- **2R** = reverse-document from RTL (see `reference/reverse_doc_guide.md`)
+- **3V** = validate existing spec completeness (same checklist, spec already exists)
+- Steps in (…) = ask user whether to include
+
+**If user intent is unclear**, ask once: "请问您需要哪些交付物？（文档 / RTL / TB / SDC / 全部）"
+
+**If user says RETRO-* mode but no RTL is found at the specified path**, ask: "请提供 RTL 文件路径，或将 RTL 放入 `<project>/rtl/` 目录。"
+
+**If user says DOC2RTL mode but no spec is found**, ask: "请提供 spec.md 路径，或将文档放入 `<project>/docs/` 目录。"
+
+⚠️ **Never auto-detect mode from filesystem. Always follow the user's explicit intent.**
+
+Record mode in status.md.
+
+**0b. Gather requirements** (all modes):
+
+For missing parameters, **propose defaults directly in spec.md** — do NOT stop to ask questions before writing spec.
+
+| Category | Agent Can Propose? | Rule |
+|----------|-------------------|------|
+| Clock names & frequencies | YES | Must appear in spec.md |
+| Reset names & polarity | YES | Must appear in spec.md |
+| Data width, key parameters | YES | Must appear in spec.md |
+| Interface protocol | YES | Must appear in spec.md |
+
+**DONE CRITERIA**: Mode determined and recorded in status.md. Requirements understood. Proceed to Step 1.
+
+---
+
+### Step 1: Project Structure
+
+Create chip-design folder layout:
+
+```
+<project>/
+  status.md       ← from reference/status_template.md
+  docs/
+    spec.md
+    *_arch.drawio  ← editable diagram source
+    *_arch.png     ← exported real PNG (not ASCII text)
+  rtl/
+  tb/              ← infrastructure ONLY (no test stimulus)
+  testcase/        ← each test in separate file (tc001_*.sv, tc002_*.sv)
+  work/            ← gitignored simulation artifacts
+  filelist/
+    rtl.f
+    tb.f
+  constraint/
+    design.sdc
+```
+
+**DONE CRITERIA**: All directories exist. status.md created from template. Immediately proceed to Step 2.
+
+---
+
+### Step 2: Write spec.md
+
+**Modes**: NEW, RETRO-FULL, RETRO-DOC, RETRO-TB. Skip in DOC2RTL (spec already exists).
+
+**For RETRO-* modes**: Read `reference/reverse_doc_guide.md` Phase 1-2. Systematically extract spec content from existing RTL before writing. Do NOT invent behavior — document what the RTL actually does.
+
+spec.md **must** include:
+
+- Clock definition table (name, frequency, period, domain)
+- Reset definition (name, polarity, sync/async, domain)
+- I/O definition table (signal, direction, width, clock/reset)
+- Parameter table (name, default, valid range, derived values)
+- Feature list with edge case behavior
+- Module hierarchy tree + microarchitecture diagram (see `reference/microarch_diagram_guidelines.md`)
+  - Create `docs/*_arch.drawio` → export real PNG → embed `![](./xxx_arch.png)` in spec
+- Verification plan: testcase list with **specific** stimulus and **automatable** pass criteria
+
+**Consistency verification** (mandatory after writing):
+
+1. Extract module names from: text spec, diagram, deliverables list
+2. All three lists must match exactly
+3. If mismatch → fix ALL before proceeding
+
+**Annotation rules** (apply to ALL project files written after this point):
+
+- File header: ≤ 10 lines
+- Inline comments: only for non-obvious design decisions
+- Prohibited: textbook explanations, repeating spec content in code
+- Target ratio: code ≥ 60%, comments ≤ 40%
+
+**DONE CRITERIA**: spec.md has all required sections. Diagram is real PNG matching text. Proceed to Step 3.
+
+---
+
+### Step 3: Spec Review — MANDATORY PROTOCOL
+
+**Modes**: All. In DOC2RTL mode, review the user-provided spec for completeness.
+
+**RETRO-* addition**: After standard review, also run Phase 3 cross-check from `reference/reverse_doc_guide.md` — verify every RTL port, parameter, and module appears in spec.
+
+This review MUST happen. Choose one option based on tool availability:
+
+**Option A — Sub-agent (preferred):**
+
+Invoke `runSubagent` with description "Spec document review" and this prompt:
+
+```
+You are an independent spec reviewer. Execute these steps:
+1. Read file: skills/skills/ip-design/reference/doc_review_checklist.md
+2. Read file: <project_path>/docs/spec.md
+3. Evaluate against ALL 7 checklist categories:
+   Completeness, Internal Consistency, Clarity, Parameter Spec,
+   Verification Plan Quality, Design Justification, Formatting
+4. For each category: Status (✅/⚠️/❌) + Finding + Suggested Fix
+5. Return structured report with:
+   - Verdict: ✅ READY / ⚠️ NEEDS IMPROVEMENT / ❌ MAJOR GAPS
+   - Issues table: # | Severity 🔴/🟡/🔵 | Category | Issue | Fix
+```
+
+**Option B — Self-review (fallback if sub-agent unavailable):**
+
+1. Read `reference/doc_review_checklist.md`
+2. For EACH of 7 categories, write: status + finding + fix
+3. Record full report in status.md
+4. Note: "Self-review mode (sub-agent unavailable)"
+
+**After review**: Fix all ⚠️ and ❌ issues in spec.md. Then proceed to GATE.
+
+**DONE CRITERIA**: Review report recorded in status.md. All flagged issues resolved.
+
+---
+
+### ⛔ GATE: User Confirmation — RIGID PROTOCOL
+
+**Execute these exact steps. No shortcuts. No reinterpretation.**
+
+**G1.** Write in status.md:
+```
+## ⛔ GATE: AWAITING USER CONFIRMATION
+```
+
+**G2.** Send this exact message to user (translate to user's language):
+```
+✅ spec.md has been completed and internally reviewed.
+📋 Please review docs/spec.md, especially: [list 3-5 key parameters]
+⏸️ Awaiting your confirmation. Please reply "confirmed" or request changes.
+⚠️ I will NOT proceed to RTL or any downstream work until you explicitly confirm.
+```
+
+**G3.** Receive user reply. Check for explicit confirmation:
+- ✅ Valid confirmations:
+  - Chinese: "确认" / "没问题" / "可以" / "同意" / "通过" / "好的"
+  - English: "confirmed" / "OK" / "proceed" / "approved" / "looks good" / "yes"
+- ❌ NOT valid: "继续" / "你继续" / "continue" alone → Reply:
+  "我需要您对 spec 的明确确认。请回复'确认'，或提出修改意见。"
+
+**G4.** Only after confirmed, write in status.md:
+```
+## ⛔ GATE: PASSED — User confirmed on <date>
+```
+
+**G5.** NOW proceed to Step 4.
+
+---
+
+### Step 4: RTL + Filelist
+
+**Modes**: NEW, DOC2RTL. Skip in RETRO-* modes (RTL already exists — only create `filelist/rtl.f` if missing).
+
+Create synthesizable RTL. Update `filelist/rtl.f` (dependency order: leaves first).
+
+**Coding rules**:
+
+- File header ≤ 10 lines
+- No textbook explanations in comments
+- `output wire` for combinational; `output reg` only when driven by always block
+- Active `(* ASYNC_REG = "TRUE" *)` on synchronizer registers — never commented out
+- No `assign` driving an `output reg` — use `output wire` + `assign`, or `output reg` + always block
+- Full/empty flags for async FIFO: compare **in Gray code domain only** (Cummings method) — do NOT mix Gray code and binary comparisons
+
+**DONE CRITERIA**: All RTL files created. filelist/rtl.f lists them in dependency order.
+
+---
+
+### Step 5: RTL Code Review — MANDATORY PROTOCOL
+
+**Modes**: NEW, DOC2RTL, RETRO-FULL, RETRO-TB. Skip in RETRO-DOC.
+
+**Option A — Sub-agent (preferred):**
+
+Invoke `runSubagent` with description "RTL code review" and this prompt:
+
+```
+You are an independent RTL code reviewer. Execute these steps:
+1. Read file: skills/skills/ip-design/reference/rtl_review_checklist.md
+2. Read file: <project_path>/docs/spec.md
+3. Read all files listed in: <project_path>/filelist/rtl.f
+4. Evaluate against ALL 7 checklist categories:
+   Synthesizability, CDC, Timing, Area, Functional Correctness,
+   Verifiability, Spec Compliance
+5. Specifically check:
+   - Full/empty flag comparisons are in correct encoding domain
+   - Synchronizer attributes are active (not commented out)
+   - Output declaration type matches driving style
+   - No reg driven by assign
+   - Reset values match spec
+6. Return structured report:
+   - Verdict: ✅ CLEAN / ⚠️ ISSUES / ❌ CRITICAL BUGS
+   - Issues: # | Severity 🔴/🟡/🔵 | File:Line | Issue | Fix
+```
+
+**Option B — Self-review fallback**: Same pattern as Step 3 Option B, using `reference/rtl_review_checklist.md`.
+
+**After review**: Fix ALL 🔴 BUG items. If bugs suggest spec misunderstanding → return to user.
+
+**DONE CRITERIA**: Review report in status.md. All 🔴 items fixed.
+
+---
+
+### Step 6: Testbench + Smoke Test — MUST COMPILE AND RUN
+
+**Modes**: NEW, DOC2RTL, RETRO-FULL, RETRO-TB. Skip in RETRO-DOC.
+
+**Read `reference/testbench_architecture.md` for code templates and patterns.**
+
+Key rules:
+- tb/ = infrastructure only. testcase/ = stimulus only.
+- **❌ NEVER use `import module_name::*`** — module is not a package.
+- Use hierarchical references (`tb_top.write_data()`) or include-based pattern.
+- Cross-clock shared resources: use separate queues per domain, not shared class.
+- Read data comparison must account for pipeline latency.
+
+**Compilation execution protocol** (follow exactly):
+
+```
+C1. Detect simulator:
+    which vcs     → VCS available?
+    which iverilog → iverilog available?
+
+C2. Select tool:
+    VCS available     → use VCS (see reference/vcs_sim.md)
+    iverilog available → use iverilog
+    Neither available → mark Step 6 as ⏸️ BLOCKED, tell user:
+      "当前环境无仿真工具，Step 6-7 无法完成。"
+      ⚠️ DO NOT mark as COMPLETED
+
+C3. Compile:
+    <compile command> 2>&1 | tee compile.log
+    Verify: exit code == 0 AND grep -c "Error" compile.log == 0
+    If failed → fix → recompile → repeat until clean
+
+C4. Run smoke test:
+    <run command> 2>&1 | tee sim.log
+    Verify: grep -q "PASSED" sim.log
+    If no PASSED → debug → fix → rerun
+
+C5. Record in status.md:
+    - Simulator used: <VCS/iverilog>
+    - Compile: <0 errors, N warnings>
+    - Smoke test: <PASSED / FAILED (reason)>
+```
+
+**DONE CRITERIA**: Compilation succeeds (0 errors). Smoke test prints PASSED. Evidence in status.md. **If compilation was never actually run, this step is NOT complete.**
+
+---
+
+### Step 7: All Testcases — MUST EXECUTE EACH ONE
+
+**Modes**: NEW, DOC2RTL, RETRO-FULL, RETRO-TB. Skip in RETRO-DOC.
+
+Implement all testcases from spec verification plan. Each in separate file.
+
+For each testcase: compile → run → verify PASSED → record result in status.md.
+
+Debug failures. Fix RTL/TB as needed. Re-run after fixes.
+
+**DONE CRITERIA**: Every testcase has been compiled, executed, and prints PASSED. status.md lists each testcase with its actual result. **If any testcase was not actually executed, this step is NOT complete.**
+
+---
+
+### Step 8: SDC Constraints
+
+**Modes**: NEW, DOC2RTL, RETRO-FULL. Skip in RETRO-DOC, RETRO-TB.
+
+Create `constraint/design.sdc` consistent with spec clock definition table.
+
+Required contents:
+- Clock definitions (frequencies MUST match spec exactly)
+- Async clock groups (`set_clock_groups -asynchronous`)
+- CDC path constraints
+- I/O delays
+- Reset false paths
+- Clock uncertainty
+
+**Consistency rule**: `set_clock_groups -asynchronous` and `set_max_delay` targeting the same path pair are **mutually exclusive**. Use one approach, not both.
+
+**DONE CRITERIA**: SDC exists. Clock frequencies match spec. No contradictory constraints.
+
+---
+
+### Step 9: Makefile
+
+**Modes**: NEW, DOC2RTL, RETRO-FULL. Skip in RETRO-DOC, RETRO-TB.
+
+Create `tb/Makefile`. Required targets:
+
+- `compile_<tc>` — Compile one testcase
+- `run_<tc>` — Compile + run one testcase
+- `regression` — Run all testcases sequentially
+- `clean` — Remove all artifacts
+
+Parameterize simulator: `SIM ?= vcs`. User adds new testcase by updating TESTCASES variable only.
+
+**DONE CRITERIA**: `make regression` runs all tests successfully.
+
+---
+
+## Plan Mode Checklist
+
+Mark steps not applicable to current mode as `[SKIP]`.
+
+```
+- [ ] [Step 0] Context check + mode detection          ← ALL modes
+- [ ] [Step 1] Project structure + status.md            ← ALL modes
+- [ ] [Step 2] spec.md (write or reverse-extract)       ← Skip in DOC2RTL
+- [ ] [Step 3] Spec review (+ RTL cross-check if RETRO) ← ALL modes
+- [ ] [GATE]   User confirms spec                      ← ALL modes, BLOCKING
+- [ ] [Step 4] RTL + rtl.f                              ← NEW, DOC2RTL only
+- [ ] [Step 5] RTL review                               ← Skip in RETRO-DOC
+- [ ] [Step 6] TB + smoke test                          ← Skip in RETRO-DOC
+- [ ] [Step 7] All testcases                            ← Skip in RETRO-DOC
+- [ ] [Step 8] SDC                                      ← NEW, DOC2RTL, RETRO-FULL
+- [ ] [Step 9] Makefile + regression                    ← NEW, DOC2RTL, RETRO-FULL
+```
+
+## Reference Documents
+
+| Document | Path | Used By |
+|----------|------|---------|
+| Consensus rules | `reference/consensus_rules.md` | All steps — stop-and-discuss protocol |
+| Change management | `reference/change_management.md` | Any spec/RTL change — atomic update rules |
+| Doc review checklist | `reference/doc_review_checklist.md` | Step 3 — spec review criteria |
+| Reverse doc guide | `reference/reverse_doc_guide.md` | Step 2/3 in RETRO-* modes — extract spec from RTL, cross-check |
+| RTL review checklist | `reference/rtl_review_checklist.md` | Step 5 — RTL review criteria |
+| VCS simulation | `reference/vcs_sim.md` | Step 6/7 — compilation and debugging |
+| Diagram guidelines | `reference/microarch_diagram_guidelines.md` | Step 2 — architecture diagram standards |
+| Diagram examples | `reference/microarch_examples.md` | Step 2 — correct/incorrect diagram comparisons |
+| TB architecture | `reference/testbench_architecture.md` | Step 6/7 — code templates and connection patterns |
+| Status template | `reference/status_template.md` | Step 1 — initial status.md content |

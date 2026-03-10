@@ -1,0 +1,709 @@
+---
+name: ip-design
+description: Guide for RTL/IP design from scratch or modification, emphasizing plan-mode execution, spec-first workflow with user confirmation, project structure, RTL/filelist/testbench/testcase/SDC synchronization, and full test completion. Enforces strict task dependencies and blocks downstream work until upstream is confirmed complete.
+---
+
+# IP Design Skill (RTL)
+
+Use this skill when the user asks to start an RTL/IP design from scratch or to modify existing RTL. Follow a plan-first, spec-driven workflow and keep RTL, filelists, testbench, testcases, and SDC synchronized after any change.
+
+## Core Principles
+
+1. **Plan-first execution**: For any non-trivial task, enter plan mode and enumerate steps. Execute step-by-step.
+
+2. **🚨 SPEC.MD IS THE MANDATORY GATE 🚨**  
+   - **ALWAYS** write `spec.md` after Step 1 (project structure)
+   - **ALWAYS** pause and wait for explicit user confirmation ("confirmed", "OK", "proceed", etc.)
+   - **NEVER** proceed to RTL/TB/testcases/SDC without confirmed spec
+   - Even if user says "continue" or "go ahead", respond: **"I need to write spec.md first for your confirmation"**
+   - This rule has NO exceptions
+
+3. **Propose reasonable defaults in spec.md**: For critical parameters (clock frequencies, reset polarities, interface protocols, data widths), if the user hasn't specified them:
+   - **Propose reasonable defaults** based on common practice and design context
+   - **Document all proposed parameters clearly in spec.md** with a note that they are proposed values
+   - **Ask user to review and confirm** these parameters during spec review
+   - Do NOT stop to ask parameters before writing spec.md—put your proposals directly in the spec
+   - The spec review is the point where users can confirm or modify these parameters
+
+4. **Synchronize downstream**: Any change to requirements or RTL must trigger updates to filelist, testbench, testcases, and SDC as needed.
+
+5. **Pure RTL**: Use synthesizable Verilog/SystemVerilog. Avoid macro-heavy code. Keep style plain and portable.
+
+6. **Honest status**: If a step cannot proceed (missing info, blocking dependency, tool error), mark it **incomplete** and explain why. Never mark a task complete when it is blocked.
+
+7. **Status tracking**: Maintain `status.md` in project root. Update it after completing each step or making key decisions. This file is the single source of truth for project progress and enables seamless handoff between agents or sessions.
+
+## Design Change Management
+
+**🚨 CRITICAL RULE: All specification documents MUST be updated together 🚨**
+
+### Specification Document Set
+
+The specification is a **collection** of interconnected documents, not a single file:
+
+1. **Text**: `docs/spec.md`, `README.md`, `status.md`
+2. **Graphics**: `docs/*.drawio` (source), `docs/*.png` (exported for embedding)
+3. **Structure**: Module lists, filelist, deliverables
+
+**Core Rule**: Text and graphics are equal—both are the specification. They must always be consistent.
+
+### Change Workflow (4 Steps)
+
+When ANY architecture changes (module structure, interface, storage, etc.):
+
+1. **Identify scope**: Which documents reference this? (spec.md, diagram, README, status.md, deliverables)
+2. **Update atomically**: All affected documents together, or none
+3. **Verify consistency**: Use the verification checklist in Step 2 (see below)
+4. **Document change**: Record in status.md what changed and which docs updated
+
+### Failure Patterns
+
+❌ Update spec.md but forget diagram  
+❌ Remove module from diagram but leave in deliverables  
+❌ Change module name in text but not in diagram
+
+✅ **Correct example**: Change "dual-port RAM module" to "register array"
+   - spec.md: "uses register array"  
+   - diagram: remove mem module box  
+   - module list: remove mem.v  
+   - deliverables: 4 files not 5  
+   - status.md: record change
+
+**Agent Mental Model**: "Specification = Text + Graphics + Structure" (not spec.md alone)
+
+## ⚠️ User Decision and Consensus Execution Principles (HIGHEST PRIORITY)
+
+The following principles override all other rules and **must be strictly followed**.
+
+### 1. Stop and Discuss When Proposal is Infeasible
+
+- After user proposes a technical approach, if you determine it is **completely unexecutable**, **immediately stop**, explain the reasons, and propose alternatives.
+- **Absolutely forbidden**: Superficially agreeing to use the user's required approach (e.g., "bitmap encoding synchronization") while secretly replacing it with another approach (e.g., "binary pointer synchronization") during implementation.
+- This "bait-and-switch" behavior is worse than refusing execution—it makes users think their approach was adopted when it actually wasn't.
+
+### 2. Strictly Follow Consensus Once Reached
+
+- Once the user explicitly confirms an approach, **strictly implement according to the confirmed approach**.
+- Do not arbitrarily "optimize", "replace", or "simplify" the confirmed approach during execution.
+- Even if you think there's a better approach, you must **first return to the discussion phase** to get user approval before making changes.
+
+### 3. Come Back for Discussion If Unable to Execute
+
+- If technical obstacles are discovered during implementation, **immediately stop** and report.
+- Return to the user with specific problems and suggestions, rather than secretly changing the approach yourself.
+- Iterate repeatedly until executable consensus is reached again.
+
+### 4. Language Consistency
+
+- **All documentation language follows the user's communication language**.
+- User communicates in Chinese → spec.md, README, comments, reports all in Chinese.
+- User communicates in English → all in English.
+- Do not write English documentation when user communicates in Chinese (unless explicitly requested).
+
+### 5. Transparent Communication
+
+- Immediately and truthfully inform the user of any problems discovered during implementation.
+- Do not "benevolently" hide problems or privately modify the approach.
+- All design decisions must be traceable—users should be able to clearly see "why this approach was chosen" from the documentation.
+
+## Task Dependency Model
+
+Tasks have strict dependencies. A task **cannot be marked complete** if any of its upstream dependencies is incomplete.
+
+```
+Step 0: Context & Scope Check
+  │
+  ▼
+Step 1: Project Structure          (depends on: Step 0)
+  │
+  ▼
+Step 2: Write spec.md               (depends on: Step 1)
+  │
+  ▼
+Step 3: Spec Doc Review (sub-agent) (depends on: Step 2)
+  │  ┌──── GATE: user must confirm spec ────┐
+  │  │  Do NOT proceed past this gate until  │
+  │  │  the user explicitly says "confirmed" │
+  │  │  or equivalent.                       │
+  │  └───────────────────────────────────────┘
+  ▼
+Step 4: RTL + filelist              (depends on: GATE passed)
+  │
+  ▼
+Step 5: RTL Code Review (sub-agent) (depends on: Step 4)
+  │
+  ├──────────────┐
+  ▼              ▼
+Step 6: TB +   Step 8: SDC         (both depend on: Step 5 passed)
+  smoke test
+  │
+  ▼
+Step 7: All testcases + debug      (depends on: Step 5 AND Step 6)
+```
+
+**Consequence**: If spec is incomplete → RTL, TB, testcases, SDC are all incomplete.
+If doc review finds major gaps → spec must be fixed before presenting to user.
+If RTL is incomplete → TB, testcases, SDC are all incomplete.
+If RTL review finds critical bugs → must fix RTL before proceeding to TB.
+If TB is incomplete → "all testcases" is incomplete.
+
+## Blocking Rules
+
+1. **Missing info blocks spec**: If critical parameters (clocks, widths, protocols) are unknown, spec cannot be written. Ask and wait.
+2. **Unconfirmed spec blocks everything downstream**: RTL, TB, testcases, SDC all depend on confirmed spec.
+3. **Unreviewed spec blocks user confirmation**: Doc review must complete before presenting spec to user. If review finds major gaps, fix them before presenting.
+4. **Unreviewed RTL blocks TB**: RTL code review must complete before testbench implementation begins. If review flags critical bugs, fix RTL first.
+5. **Failed compilation blocks test execution**: If VCS compile fails, fix before running.
+6. **Failed test blocks "all tests pass"**: Debug and fix; do not skip.
+7. **Incomplete upstream blocks downstream completion**: If Step N is incomplete, all steps that depend on Step N are also incomplete regardless of their own state.
+8. **Inconsistent documentation blocks user confirmation**: If text specification and architecture diagram show different module structures (e.g., text says 4 modules but diagram shows 5), spec is incomplete and cannot be confirmed. Fix all documents to match before presenting to user.
+
+## Workflow
+
+### Step 0: Context & Scope Check
+
+**Critical Rule**: The following information **must appear explicitly in spec.md** before any downstream work begins:
+
+| Category | Required Info | Agent Can Propose? | Confirmation Rule |
+|----------|--------------|-------------------|------------------|
+| Clock names & frequencies | e.g. wclk=100MHz, rclk=66MHz | **YES — propose in spec** | Must be in spec.md; user confirms before RTL |
+| Reset names & polarity | e.g. rst_n, active low | **YES — propose in spec** | Must be in spec.md; user confirms before RTL |
+| Data width | e.g. 8-bit | **YES — propose in spec** | Must be in spec.md; user confirms before RTL |
+| Key functional parameters | e.g. FIFO depth, bus width | **YES — propose in spec** | Must be in spec.md; user confirms before RTL |
+| Interface protocol | e.g. AXI, valid/ready, custom | **YES — propose in spec** | Must be in spec.md; user confirms before RTL |
+| Performance requirements | Throughput, latency | **YES — can omit if not mentioned** | Optional; but if included, must be in spec |
+
+**Workflow**:
+1. If user provides explicit values → use those in spec
+2. If user is vague/silent → agent evaluates reasonable defaults and **documents them in spec.md**
+3. Present spec.md to user with proposed values **clearly marked** (e.g., use bold or italic to highlight proposed defaults)
+4. **Emphasize in presentation**: "Please review the proposed parameters carefully, especially: [list key parameters]"
+5. User confirms or requests changes
+6. Only after confirmation: proceed to RTL/TB/testcases/SDC
+
+**The spec is the contract**. All critical parameters must be written down and confirmed, not left implicit or "guessed silently".
+
+**❌ DO NOT** stop before writing spec.md to ask for parameters. **✅ DO** propose defaults directly in spec.md and let user review them there.
+
+### Step 1: Project Structure
+
+Create a chip-design style folder layout:
+
+```
+<project>/
+  status.md            # Project status tracking (updated at each step)
+  docs/
+    spec.md            # Design specification (main document)
+    *_arch.drawio      # Architecture diagrams (editable source)
+    *_arch.png         # Exported images (for spec.md embedding)
+  rtl/
+  tb/
+    tb_top.sv          # Testbench infrastructure only
+    Makefile           # Build and regression scripts
+  testcase/
+    tc001_*.sv         # Each testcase in separate file
+    tc002_*.sv
+    ...
+  work/                # Simulation output directory (gitignored)
+    simv               # Compiled binary
+    *.log              # Simulation logs
+    *.vcd/.fsdb        # Waveforms
+  filelist/
+    rtl.f
+    tb.f
+  constraint/
+    design.sdc
+```
+
+**Directory Responsibilities**:
+
+- **tb/**: Testbench **infrastructure only** (DUT wrapper, clock generators, reference models, reusable tasks, interfaces, common utilities). No test logic.
+- **testcase/**: Each testcase in a **separate file** (`tc001_*.sv`, `tc002_*.sv`, etc.). Each file contains one test module with stimulus and checking for one specific scenario.
+- **work/**: All simulation artifacts (compiled binary, logs, waveforms). This directory is excluded from version control (add to `.gitignore`).
+
+**Rule**: Every testcase must be in its own file. If multiple tests share common setup/checking code, that code goes into `tb/` as reusable tasks/classes, not duplicated across testcases.
+
+Use typical open-source RTL project conventions (Verilog/SystemVerilog, conventional filelists, complete testbench). Do not use SpinalHDL or Chisel.
+
+**Status Tracking**: Create `status.md` in the project root directory to track progress. This file enables cross-agent and cross-session continuity. Initial content:
+
+```markdown
+# Project Status
+
+**Project Name**: <project_name>
+**Created**: <date>
+**Last Updated**: <date>
+
+## Current Phase
+
+Step 1: Project Structure - ✅ COMPLETED
+
+## Progress Checklist
+
+- [x] Step 0: Context & Scope Check
+- [x] Step 1: Project Structure Created
+- [ ] Step 2: spec.md Written (PENDING USER CONFIRMATION)
+- [ ] Step 3: Spec Doc Review
+- [ ] Step 4: RTL Implementation
+- [ ] Step 5: RTL Code Review
+- [ ] Step 6: Testbench Infrastructure
+- [ ] Step 7: All Testcases Implemented
+- [ ] Step 8: SDC Constraints
+- [ ] Step 9: Makefile Created
+
+## Key Decisions
+
+- **Design approach**: <brief summary>
+- **Critical parameters**: <list confirmed parameters>
+
+## Next Action
+
+Write spec.md and wait for user confirmation.
+
+## Notes
+
+<Any important context or decisions>
+```
+
+**⚠️ UPDATE RULE**: Every time you complete a step or make a key decision, **immediately update status.md**. This ensures anyone (including a different agent) can pick up the project at any point.
+
+**⚠️ CRITICAL**: After completing project structure, you **MUST** immediately proceed to Step 2 (write spec.md). Do NOT start RTL or any downstream work.
+
+### Step 2: Write `spec.md`
+
+**🚨 THIS IS THE MANDATORY GATE — NOTHING DOWNSTREAM CAN PROCEED WITHOUT USER-CONFIRMED SPEC 🚨**
+
+`spec.md` **must** include:
+
+- **Clock definition table**: every clock's name, frequency, period, and associated domain
+- **I/O definition**: signal name, direction, width, associated clock/reset
+- **Feature list**: supported functionality
+- **Module hierarchy and microarchitecture diagram**: 
+  - Complete module tree showing parent-child instantiation relationships
+  - Microarchitecture block diagram following standards in `reference/microarch/diagram_guidelines.md`
+  - **Diagram workflow**:
+    1. Create editable source: `docs/<module_name>_arch.drawio`
+    2. Export to PNG: `docs/<module_name>_arch.png`
+    3. Embed in spec.md: `![Architecture](./module_name_arch.png)`
+  - Each module in the diagram must correspond to an actual .v/.sv file
+  - Keep both .drawio (for editing) and .png (for viewing) files
+
+**⚠️ CONSISTENCY VERIFICATION (Mandatory after writing/updating spec.md)**:
+
+After completing spec.md and architecture diagram, perform this verification:
+
+1. **Extract module names from text spec** (from module hierarchy section in docs/spec.md)
+2. **Extract module names from diagram** (each box should be one module)
+3. **Compare the lists**:
+   - Must contain exactly the same module names
+   - No module in text that's not in diagram
+   - No module in diagram that's not in text
+4. **Check deliverables list**: Must match module count and names
+5. **If mismatch found**:
+   - Identify the discrepancy
+   - Determine which version is correct
+   - Update all inconsistent documents
+   - Re-verify until consistent
+
+**Example Verification**:
+```
+Text spec (docs/spec.md) mentions: [async_fifo.v, async_fifo_write.v, async_fifo_read.v, gray_sync.v]
+Diagram (docs/async_fifo_arch.drawio) shows: [async_fifo.v, async_fifo_write.v, async_fifo_read.v, gray_sync.v]
+Deliverables list:          [async_fifo.v, async_fifo_write.v, async_fifo_read.v, gray_sync.v]
+Match? ✅ ALL CONSISTENT → OK to proceed
+```
+
+**Red Flag Example**:
+```
+Text spec mentions: [top.v, ctrl_a.v, ctrl_b.v] (3 modules)
+Diagram shows:      [top.v, ctrl_a.v, ctrl_b.v, mem.v] (4 modules)
+Match? ❌ INCONSISTENT → STOP → Fix before presenting to user
+```
+
+- **Verification plan**:
+  - Test framework choice
+  - Testplan
+  - Testbench architecture
+  - Testcase list with pass criteria
+
+**Clock Definition Table Example** (mandatory in every spec):
+
+| Clock Name | Frequency | Period | Domain | Description |
+|------------|-----------|--------|--------|-------------|
+| wclk | 100 MHz | 10 ns | Write | Write domain clock |
+
+This table is the single source of truth for SDC clock constraints.
+
+**Module Hierarchy Example** (mandatory in every spec):
+
+```
+top_module
+├── sub_module_a (sub_module_a.sv)
+│   ├── unit_1 (unit_1.sv)
+│   └── unit_2 (unit_2.sv)
+└── sub_module_b (sub_module_b.sv)
+    └── controller (controller.sv)
+```
+
+**Microarchitecture Diagram Requirements:**
+- Follow standards in `reference/microarch/diagram_guidelines.md`
+- Use black/white/gray color scheme (light backgrounds for clock/power domains only)
+- Each box = one RTL module (.v/.sv file)
+- Orthogonal (90°) connections only
+- Include legend
+- Minimal text annotations
+- Save as `docs/<module_name>_architecture.drawio`
+
+### Step 3: Spec Document Review (Sub-Agent)
+
+After writing spec.md, launch the **spec-reviewer** sub-agent to independently review the document **before** presenting it to the user.
+
+**Purpose:** Improve spec quality before user sees it. The sub-agent catches ambiguities, missing details, and internal inconsistencies so the user receives a polished document.
+
+**Process:**
+1. Invoke the `spec-reviewer` agent (defined in `.github/agents/spec-reviewer.agent.md`)
+2. The reviewer will read `reference/doc_review_checklist.md` and evaluate `docs/spec.md`
+3. Wait for the review report
+4. Apply suggested improvements to docs/spec.md (fix ambiguities, add missing details, resolve inconsistencies)
+5. If reviewer flags critical gaps that require user input, note them as explicit questions for the user
+
+**Interpreting Results:**
+- **✅ READY**: Spec is polished — present to user for confirmation
+- **⚠️ NEEDS IMPROVEMENT**: Fix the flagged issues, then present to user
+- **❌ MAJOR GAPS**: Major rewrite needed before presenting to user
+
+**Update status.md**:
+```markdown
+- [x] Step 3: Spec Doc Review - ✅ COMPLETED on <date>
+  - Issues found: <count>
+  - Issues fixed: <count>
+  - Questions for user: <list if any>
+```
+
+---
+
+## ⛔⛔⛔ MANDATORY GATE: USER CONFIRMATION REQUIRED ⛔⛔⛔
+
+After completing doc review and improving spec.md, you **MUST**:
+
+1. **STOP** all downstream work
+2. **PRESENT** the reviewed and improved docs/spec.md to the user
+3. **SAY**: "The spec has been reviewed and improved. Please confirm. I will proceed to RTL after confirmation." (or in user's language)
+4. **WAIT** for explicit user confirmation:
+   - ✅ Valid: "confirmed" / "OK" / "proceed" / "looks good" / "yes" (or equivalent in user's language)
+   - ❌ Invalid: Silence, asking questions (answer first, then wait for confirmation again)
+5. **DO NOT** interpret "continue" (or equivalent) as confirmation if spec has not been presented yet
+6. If user requests changes, iterate on spec until confirmed
+
+**Only after explicit confirmation**: proceed to Step 4.
+
+**Update status.md**: After user confirms spec, update status.md:
+```markdown
+- [x] Step 2: spec.md CONFIRMED by user on <date>
+```
+
+**⛔ GATE**: Stop and ask for user confirmation after delivering reviewed spec.md. Do not proceed until the user explicitly approves.
+
+### Step 4: RTL + Filelist
+
+Create synthesizable RTL and update `filelist/rtl.f`.
+
+- Keep RTL clean and minimal
+- Avoid macros unless strictly necessary
+- Ensure filelist order is correct (dependencies before dependents)
+
+**Update status.md** after completing RTL:
+```markdown
+- [x] Step 4: RTL Implementation - ✅ COMPLETED on <date>
+```
+
+### Step 5: RTL Code Review (Sub-Agent)
+
+After writing RTL, launch the **rtl-reviewer** sub-agent to independently review the code against the confirmed spec.
+
+**Purpose:** Catch bugs, spec deviations, CDC issues, and coding problems before investing effort in testbench and verification.
+
+**Process:**
+1. Invoke the `rtl-reviewer` agent (defined in `.github/agents/rtl-reviewer.agent.md`)
+2. The reviewer will read `reference/rtl_review_checklist.md`, `docs/spec.md`, and all RTL files
+3. Wait for the review report
+4. Fix all 🔴 BUG issues in RTL
+5. Address 🟡 RISK issues (fix or document justification)
+6. Optionally fix 🔵 STYLE issues
+
+**Interpreting Results:**
+- **✅ CLEAN**: RTL passes review — proceed to Step 6 (TB)
+- **⚠️ ISSUES FOUND**: Fix flagged issues in RTL, then proceed
+- **❌ CRITICAL BUGS**: Must fix all critical bugs before proceeding. If bugs indicate spec misunderstanding, revisit spec with user
+
+**Update status.md**:
+```markdown
+- [x] Step 5: RTL Code Review - ✅ COMPLETED on <date>
+  - Bugs found: <count>
+  - Bugs fixed: <count>
+  - Risks acknowledged: <list if any>
+```
+
+### Step 6: Testbench Infrastructure + Smoke Test
+
+Implement testbench **infrastructure** from spec:
+
+- Clock generators (frequency from spec clock table)
+- Reset sequences
+- DUT instantiation
+- Reference model (if applicable)
+- Reusable tasks: `write_data()`, `read_data()`, `check_output()`, etc.
+- Interfaces (if using SystemVerilog interfaces)
+- Common utilities: timeout watchdog, coverage collection, etc.
+
+**Do NOT put test stimulus in `tb/` files**. The testbench provides only the infrastructure.
+
+Create the first testcase `testcase/tc001_smoke_test.sv` that imports/uses the testbench infrastructure.
+
+Update `filelist/tb.f` to include testbench infrastructure (but not testcase files—those are compiled separately).
+
+Compilation and simulation use VCS in `work/` directory (see `reference/vcs_sim.md`):
+
+```bash
+# Create work directory
+mkdir -p work
+cd work
+
+# Compile (from work/)
+vcs -full64 -sverilog -timescale=1ns/1ps \
+    -f ../filelist/rtl.f -f ../filelist/tb.f \
+    ../testcase/tc001_smoke_test.sv \
+    -o simv -l compile.log
+
+# Run smoke test
+./simv -l sim_smoke.log
+```
+
+**Smoke test must**:
+- Compile cleanly
+- Run and print `PASSED`
+- Generate no unexpected warnings
+
+This step is complete only when smoke test passes in `work/` directory.
+
+**Update status.md**:
+```markdown
+- [x] Step 6: Testbench Infrastructure & Smoke Test - ✅ COMPLETED, smoke test PASSED on <date>
+```
+
+### Step 7: Implement All Testcases
+
+Implement all testcases from spec. **Each testcase must be in a separate file** in `testcase/` directory:
+
+- `testcase/tc001_smoke_test.sv`
+- `testcase/tc002_full_test.sv`
+- `testcase/tc003_empty_test.sv`
+- etc.
+
+**Testcase File Structure**:
+```systemverilog
+// testcase/tc002_full_test.sv
+module tc002_full_test;
+    // Use infrastructure from tb/
+    // Import testbench tasks/classes if needed
+    
+    initial begin
+        // Test-specific stimulus
+        // ...
+        
+        if (all_checks_passed)
+            $display("PASSED: tc002_full_test");
+        else
+            $display("FAILED: tc002_full_test");
+        $finish;
+    end
+endmodule
+```
+
+Each test is compiled separately with the testbench infrastructure:
+```bash
+cd work
+vcs -full64 -sverilog -timescale=1ns/1ps \
+    -f ../filelist/rtl.f -f ../filelist/tb.f \
+    ../testcase/tc002_full_test.sv \
+    -o simv_tc002 -l compile_tc002.log
+./simv_tc002 -l sim_tc002.log
+```
+
+Or use a Makefile-based regression that compiles and runs all tests in sequence.
+
+Debug failures, fix RTL/TB as needed. This step is complete only when **all** testcases print `PASSED`.
+
+**Remember**: Common code (tasks, checkers, utilities) goes in `tb/`, not duplicated across testcases.
+
+**Update status.md** after all tests pass:
+```markdown
+- [x] Step 7: All Testcases Implemented - ✅ ALL TESTS PASSING on <date>
+  - TC001: smoke_test - PASSED
+  - TC002: full_test - PASSED
+  - TC003: empty_test - PASSED
+  <... list all testcases ...>
+```
+
+### Step 8: SDC
+
+Create `constraint/design.sdc` consistent with the spec.
+
+- Clock definitions derived from spec clock table (frequencies must match exactly)
+- Asynchronous clock groups for CDC
+- False paths for Gray code / synchronizer paths
+- I/O delays
+- Reset false paths
+
+**Update status.md**:
+```markdown
+- [x] Step 8: SDC Constraints - ✅ COMPLETED on <date>
+```
+
+### Step 9: Makefile for Build and Regression
+
+Create `tb/Makefile` to automate compilation and testing.
+
+**Purpose**: Provide a unified interface for building and running tests, regardless of the underlying simulator.
+
+**Required targets:**
+
+- `compile` or `compile_%` - Compile testbench infrastructure and testcase(s)
+- `run` or `run_%` - Execute compiled simulation
+- `clean` - Remove all build artifacts
+- `regression` or `all` - Run complete test suite sequentially
+
+**Key design principles:**
+
+1. **Tool-agnostic interface**: User should type `make run_tc001` regardless of whether using VCS, Xrun, Verilator, etc.
+2. **File list driven**: Use `-f filelist/rtl.f -f filelist/tb.f` pattern, not hardcoded file lists
+3. **Per-testcase binaries**: Each testcase compiles to its own executable (e.g., `simv_tc001`, `xrun_tc001`)
+4. **Automatic pass/fail detection**: Parse simulation output for `PASSED`/`FAILED` keywords
+5. **Clean separation**: Work products (logs, binaries, waveforms) stay in `tb/` or `work/`, not scattered
+
+**Standard usage pattern:**
+
+```bash
+cd tb
+
+# Single test
+make run_tc001_smoke_test
+
+# Full regression
+make regression
+
+# Clean
+make clean
+```
+
+**Implementation notes:**
+
+- Check `reference/vcs_sim.md` (or equivalent for your simulator) for tool-specific flags
+- For VCS: see `eda_toolchain_debug/issues/vcs/001_*` for known linking issues
+- For multi-simulator support: use `SIM ?= vcs` variable and conditional logic
+- Regression should stop on first failure to catch issues early
+
+**Variables to parameterize:**
+
+```makefile
+SIM       ?= vcs              # Simulator choice
+SIM_FLAGS ?= <tool-specific>  # Compilation/simulation flags
+RTL_F     := ../filelist/rtl.f
+TB_F      := ../filelist/tb.f
+TESTCASES := tc001_smoke tc002_full ...
+```
+
+**Example target structure (pseudocode):**
+
+```makefile
+compile_%:
+	$(SIM) $(SIM_FLAGS) -f $(RTL_F) -f $(TB_F) ../testcase/$*.sv -o $(SIM)_$*
+
+run_%: compile_%
+	./$(SIM)_$* | tee run_$*.log
+	@grep -q "PASSED" run_$*.log
+
+regression:
+	@for tc in $(TESTCASES); do make run_$$tc || exit 1; done
+```
+
+This step is complete when:
+- Makefile exists in `tb/`
+- `make regression` successfully runs all tests
+- User can add new testcases by simply updating `TESTCASES` variable
+
+**Update status.md**:
+```markdown
+- [x] Step 9: Makefile Created - ✅ COMPLETED, regression passing on <date>
+
+## Current Phase
+
+🎉 PROJECT COMPLETE - All steps finished successfully!
+```
+
+**DO NOT hardcode tool-specific commands in the step description itself** — refer users to simulator-specific reference docs instead.
+
+## Plan Mode Checklist
+
+When entering plan mode, produce a checklist with dependency annotations.
+
+**IMPORTANT**: This checklist should mirror the content in `status.md`. Keep both synchronized.
+
+```
+- [ ] [Step 0] Gather/confirm requirements (ask for missing critical info)
+- [ ] [Step 1] Create project structure                          ← depends on: Step 0
+- [ ] [Step 2] Write spec.md (clocks, IO, features, testplan)   ← depends on: Step 1
+- [ ] [Step 3] Spec doc review (sub-agent)                       ← depends on: Step 2
+- [ ] [GATE]   User confirms spec                               ← BLOCKING
+- [ ] [Step 4] Implement RTL + rtl.f                             ← depends on: GATE passed
+- [ ] [Step 5] RTL code review (sub-agent)                       ← depends on: Step 4
+- [ ] [Step 6] Implement TB + smoke test + tb.f                  ← depends on: Step 5 passed
+- [ ] [Step 7] Implement all testcases; debug to green           ← depends on: Step 5 AND Step 6
+- [ ] [Step 8] Write design.sdc                                  ← depends on: Step 5
+- [ ] [Step 9] Create tb/Makefile for build and regression       ← depends on: Step 6 AND Step 7
+```
+
+## Change Management Rules
+
+- Any spec change → re-confirm with user → update RTL, filelist, testbench, testcases, and SDC as required
+- Any RTL change → update filelist, TB, testcases, and constraints if needed
+- Any testbench architecture change → may need to re-run all testcases
+
+## Simulation Reference
+
+See [reference/vcs_sim.md](reference/vcs_sim.md) for detailed VCS compilation, simulation, regression, and debugging patterns.
+
+## Review Reference
+
+See [reference/doc_review_checklist.md](reference/doc_review_checklist.md) for the spec document review checklist used by the spec-reviewer sub-agent in Step 3.
+
+See [reference/rtl_review_checklist.md](reference/rtl_review_checklist.md) for the RTL code review checklist used by the rtl-reviewer sub-agent in Step 5.
+
+## Microarchitecture Diagram Standards
+
+When creating microarchitecture diagrams (required in spec.md):
+
+1. **Load the guidelines**: See [reference/microarch/diagram_guidelines.md](reference/microarch/diagram_guidelines.md) for complete standards
+2. **Review examples**: Check [reference/microarch/examples.md](reference/microarch/examples.md) for correct and incorrect examples
+3. **Key principles**:
+   - Black/white/gray color scheme (light backgrounds only for clock/power domains)
+   - One box = one RTL module (.v/.sv file)
+   - Orthogonal (horizontal/vertical) connections only
+   - Unified rounded corners (3-6px radius)
+   - Include legend
+   - Minimize text descriptions
+4. **Save location**: `docs/<module_name>_architecture.drawio`
+5. **Tool**: Use draw.io (VS Code extension or web app)
+
+**MANDATORY**: Every spec.md must include both:
+- Module hierarchy tree (text format)
+- Microarchitecture block diagram (.drawio file)
+
+## Output Expectations
+
+- `spec/spec.md` — confirmed by user before downstream work
+- Fully synthesizable RTL
+- Complete testbench + testcase suite
+- All testcases passing (verified by running)
+- `tb/Makefile` with working `compile`, `run_*`, `regression`, and `clean` targets
+- SDC constraints aligned with spec clock frequencies

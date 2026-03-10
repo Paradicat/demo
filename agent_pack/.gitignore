@@ -1,0 +1,9 @@
+# skills/ 下由 skill_integration.sh / tool_integration.sh 自动创建的条目不入 Git
+# 只保留真实文件（自有 skill 目录）和 .gitkeep
+skills/*
+!skills/.gitkeep
+!skills/*/
+
+# work/ - 下载的压缩包和解压临时目录（不入 Git）
+work/
+
