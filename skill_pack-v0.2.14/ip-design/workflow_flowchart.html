@@ -1,0 +1,252 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>IP Design Skill — 工作流流程图</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: 'Segoe UI', system-ui, sans-serif; background: #0f1117; color: #e0e0e0; min-height: 100vh; padding: 24px; }
+  h1 { text-align: center; font-size: 1.6rem; margin-bottom: 8px; color: #fff; }
+  .subtitle { text-align: center; color: #888; font-size: 0.9rem; margin-bottom: 24px; }
+
+  /* Entry selector */
+  .entry-selector { display: flex; justify-content: center; gap: 16px; margin-bottom: 32px; flex-wrap: wrap; }
+  .entry-btn {
+    padding: 12px 28px; border-radius: 8px; border: 2px solid #333;
+    background: #1a1d27; color: #ccc; font-size: 0.95rem; cursor: pointer;
+    transition: all 0.2s;
+  }
+  .entry-btn:hover { border-color: #555; background: #22263a; }
+  .entry-btn.active-NEW { border-color: #4ecdc4; color: #4ecdc4; background: #1a2d2c; }
+  .entry-btn.active-HAS_RTL { border-color: #ff6b6b; color: #ff6b6b; background: #2d1a1a; }
+  .entry-btn.active-HAS_DOC { border-color: #ffd93d; color: #ffd93d; background: #2d2a1a; }
+
+  /* Legend */
+  .legend { display: flex; justify-content: center; gap: 24px; margin-bottom: 28px; flex-wrap: wrap; font-size: 0.82rem; }
+  .legend-item { display: flex; align-items: center; gap: 6px; }
+  .legend-dot { width: 12px; height: 12px; border-radius: 3px; }
+
+  /* Flow container */
+  .flow { display: flex; flex-direction: column; align-items: center; gap: 0; max-width: 600px; margin: 0 auto; }
+
+  /* Arrow between steps */
+  .arrow { width: 2px; height: 24px; background: #444; position: relative; }
+  .arrow::after { content: '▼'; position: absolute; bottom: -6px; left: 50%; transform: translateX(-50%); color: #444; font-size: 8px; }
+
+  /* Step card */
+  .step {
+    width: 100%; padding: 16px 20px; border-radius: 10px;
+    border: 2px solid #333; background: #1a1d27;
+    transition: all 0.3s; position: relative;
+  }
+  .step-header { display: flex; align-items: center; gap: 10px; margin-bottom: 4px; }
+  .step-label { font-weight: 700; font-size: 0.85rem; }
+  .step-title { font-size: 0.95rem; font-weight: 600; }
+  .step-desc { font-size: 0.8rem; color: #888; margin-top: 4px; }
+  .step-badge {
+    position: absolute; top: 12px; right: 14px;
+    font-size: 0.7rem; padding: 2px 8px; border-radius: 4px;
+    font-weight: 600; text-transform: uppercase;
+  }
+
+  /* States */
+  .step.always { border-color: #4ecdc4; }
+  .step.always .step-label { color: #4ecdc4; }
+
+  .step.gate { border-color: #ff6b6b; background: #1f1215; }
+  .step.gate .step-label { color: #ff6b6b; }
+
+  .step.active { border-color: #6c8cff; }
+  .step.active .step-label { color: #6c8cff; }
+  .step.active .step-badge { background: #1a2040; color: #6c8cff; }
+
+  .step.skip { border-color: #333; opacity: 0.4; }
+  .step.skip .step-label { color: #555; }
+  .step.skip .step-badge { background: #222; color: #555; }
+  .step.skip .step-title { text-decoration: line-through; color: #555; }
+
+  .step.optional { border-color: #ffd93d; border-style: dashed; }
+  .step.optional .step-label { color: #ffd93d; }
+  .step.optional .step-badge { background: #2d2a1a; color: #ffd93d; }
+
+  /* Deliverable toggles */
+  .deliverable-controls {
+    display: flex; flex-wrap: wrap; gap: 8px; justify-content: center;
+    margin: 20px auto; max-width: 600px; padding: 16px;
+    background: #14161e; border: 1px solid #2a2d3a; border-radius: 10px;
+  }
+  .deliverable-controls h3 { width: 100%; text-align: center; font-size: 0.85rem; color: #888; margin-bottom: 4px; }
+  .deliv-toggle {
+    padding: 6px 14px; border-radius: 6px; border: 1px solid #444;
+    background: #1a1d27; color: #aaa; font-size: 0.8rem; cursor: pointer;
+    transition: all 0.2s;
+  }
+  .deliv-toggle.on { border-color: #6c8cff; color: #6c8cff; background: #1a2040; }
+  .deliv-toggle:hover { border-color: #666; }
+
+  /* Source badge */
+  .source-badge {
+    display: inline-block; font-size: 0.7rem; padding: 1px 6px;
+    border-radius: 3px; margin-left: 6px; font-weight: 400;
+  }
+  .source-NEW { background: #1a2d2c; color: #4ecdc4; }
+  .source-HAS_RTL { background: #2d1a1a; color: #ff6b6b; }
+  .source-HAS_DOC { background: #2d2a1a; color: #ffd93d; }
+</style>
+</head>
+<body>
+
+<h1>🔧 IP Design Skill — 工作流流程图</h1>
+<p class="subtitle">选择入口点查看工作流变化，切换交付物查看步骤启用/跳过状态</p>
+
+<div class="entry-selector">
+  <button class="entry-btn" data-entry="NEW" onclick="setEntry('NEW')">🆕 NEW<br><small>从零设计</small></button>
+  <button class="entry-btn" data-entry="HAS_RTL" onclick="setEntry('HAS_RTL')">📦 HAS_RTL<br><small>已有 RTL 代码</small></button>
+  <button class="entry-btn" data-entry="HAS_DOC" onclick="setEntry('HAS_DOC')">📄 HAS_DOC<br><small>已有设计文档</small></button>
+</div>
+
+<div class="legend">
+  <div class="legend-item"><div class="legend-dot" style="background:#4ecdc4"></div> 始终执行</div>
+  <div class="legend-item"><div class="legend-dot" style="background:#ff6b6b"></div> 门控（阻塞）</div>
+  <div class="legend-item"><div class="legend-dot" style="background:#6c8cff"></div> 已启用</div>
+  <div class="legend-item"><div class="legend-dot" style="background:#ffd93d; border: 1px dashed #ffd93d;"></div> 可选（用户可切换）</div>
+  <div class="legend-item"><div class="legend-dot" style="background:#333"></div> 跳过</div>
+</div>
+
+<div id="deliverables-panel" class="deliverable-controls" style="display:none;">
+  <h3>📦 门控后交付物（点击切换）</h3>
+  <button class="deliv-toggle" data-step="4" onclick="toggleDeliv(4)">Step 4: RTL</button>
+  <button class="deliv-toggle" data-step="5" onclick="toggleDeliv(5)">Step 5: RTL 评审</button>
+  <button class="deliv-toggle" data-step="6" onclick="toggleDeliv(6)">Step 6: TB</button>
+  <button class="deliv-toggle" data-step="7" onclick="toggleDeliv(7)">Step 7: 测试</button>
+  <button class="deliv-toggle" data-step="8" onclick="toggleDeliv(8)">Step 8: SDC</button>
+  <button class="deliv-toggle" data-step="9" onclick="toggleDeliv(9)">Step 9: Makefile</button>
+</div>
+
+<div class="flow" id="flow"></div>
+
+<script>
+const steps = [
+  { id: 0, label: 'Step 0', title: '入口点与交付物', desc: '确定 NEW / HAS_RTL / HAS_DOC，选择交付物', type: 'always' },
+  { id: 1, label: 'Step 1', title: '项目结构', desc: '创建目录、status.md', type: 'always' },
+  { id: 2, label: 'Step 2', title: '撰写 spec.md', desc: '', type: 'always' },
+  { id: 3, label: 'Step 3', title: '规格评审', desc: '按 doc_review_checklist.md 检查', type: 'always' },
+  { id: 'gate', label: '⛔ 门控', title: '用户确认规格', desc: '必须等待明确确认才能继续', type: 'gate' },
+  { id: 4, label: 'Step 4', title: 'RTL + Filelist', desc: '创建可综合 RTL 代码', type: 'deliverable' },
+  { id: 5, label: 'Step 5', title: 'RTL 代码评审', desc: '按 rtl_review_checklist.md 检查', type: 'deliverable' },
+  { id: 6, label: 'Step 6', title: 'TB + 冒烟测试', desc: '必须编译并运行通过', type: 'deliverable' },
+  { id: 7, label: 'Step 7', title: '全部测试用例', desc: '每个用例必须执行并 PASSED', type: 'deliverable' },
+  { id: 8, label: 'Step 8', title: 'SDC 约束', desc: '时钟定义、CDC 约束', type: 'deliverable' },
+  { id: 9, label: 'Step 9', title: 'Makefile', desc: 'make regression', type: 'deliverable' },
+];
+
+const specSources = {
+  NEW: '从需求撰写',
+  HAS_RTL: '从 RTL 提取 (rtl2doc_guide)',
+  HAS_DOC: '改写已有文档 (doc2doc_guide)',
+};
+
+const defaults = {
+  NEW:     { 4: true, 5: true, 6: true, 7: true, 8: true, 9: true },
+  HAS_RTL: { 4: false, 5: true, 6: true, 7: true, 8: true, 9: true },
+  HAS_DOC: { 4: true, 5: true, 6: true, 7: true, 8: true, 9: true },
+};
+
+let currentEntry = null;
+let deliverables = {};
+
+function setEntry(entry) {
+  currentEntry = entry;
+  deliverables = { ...defaults[entry] };
+
+  // Update entry buttons
+  document.querySelectorAll('.entry-btn').forEach(btn => {
+    btn.className = 'entry-btn';
+    if (btn.dataset.entry === entry) btn.classList.add('active-' + entry);
+  });
+
+  // Show deliverable controls
+  document.getElementById('deliverables-panel').style.display = 'block';
+  updateDeliverableButtons();
+  render();
+}
+
+function toggleDeliv(step) {
+  deliverables[step] = !deliverables[step];
+  // Step 5 requires RTL to exist (step 4 on, or HAS_RTL)
+  if (step === 4 && !deliverables[4] && currentEntry !== 'HAS_RTL') {
+    deliverables[5] = false;
+  }
+  // Step 7 requires Step 6
+  if (step === 6 && !deliverables[6]) deliverables[7] = false;
+  // Step 9 requires Step 6
+  if (step === 6 && !deliverables[6]) deliverables[9] = false;
+
+  updateDeliverableButtons();
+  render();
+}
+
+function updateDeliverableButtons() {
+  document.querySelectorAll('.deliv-toggle').forEach(btn => {
+    const s = parseInt(btn.dataset.step);
+    btn.className = 'deliv-toggle' + (deliverables[s] ? ' on' : '');
+  });
+}
+
+function render() {
+  const flow = document.getElementById('flow');
+  flow.innerHTML = '';
+
+  steps.forEach((step, i) => {
+    if (i > 0) {
+      const arrow = document.createElement('div');
+      arrow.className = 'arrow';
+      flow.appendChild(arrow);
+    }
+
+    const card = document.createElement('div');
+    let stateClass = '';
+    let badge = '';
+    let extraDesc = step.desc;
+
+    if (step.type === 'always') {
+      stateClass = 'always';
+      badge = '<span class="step-badge" style="background:#1a2d2c;color:#4ecdc4">始终</span>';
+      if (step.id === 2) {
+        const src = specSources[currentEntry];
+        extraDesc = src;
+        badge += `<span class="source-badge source-${currentEntry}">${currentEntry}</span>`;
+      }
+    } else if (step.type === 'gate') {
+      stateClass = 'gate';
+      badge = '<span class="step-badge" style="background:#2d1215;color:#ff6b6b">阻塞</span>';
+    } else if (step.type === 'deliverable') {
+      const on = deliverables[step.id];
+      if (on) {
+        stateClass = 'active';
+        badge = '<span class="step-badge">已启用</span>';
+      } else {
+        stateClass = 'skip';
+        badge = '<span class="step-badge">跳过</span>';
+      }
+    }
+
+    card.className = `step ${stateClass}`;
+    card.innerHTML = `
+      <div class="step-header">
+        <span class="step-label">${step.label}</span>
+        <span class="step-title">${step.title}</span>
+      </div>
+      ${badge}
+      <div class="step-desc">${extraDesc}</div>
+    `;
+    flow.appendChild(card);
+  });
+}
+
+// Initialize with NEW
+setEntry('NEW');
+</script>
+</body>
+</html>
