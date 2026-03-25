@@ -1,0 +1,6 @@
+[submodule "third_party_skills/skills"]
+	path = third_party_skills/skills
+	url = git@github.com:Agent123123123/skills.git
+[submodule "third_party_skills/dv_skills"]
+	path = third_party_skills/dv_skills
+	url = git@github.com:Agent123123123/dv_skills.git
